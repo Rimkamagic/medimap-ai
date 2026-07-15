@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f5f8fa;
+  --foreground: #111618;
+  --teal: #007a73;
+  --teal-dark: #00615d;
+  --blue: #155bd4;
+  --line: #c4d0d2;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.nav-link {
+  border-bottom: 2px solid transparent;
+  padding: 1.25rem 0 0.95rem;
+  font-size: 1rem;
+  font-weight: 650;
+  color: #1f2933;
+}
+
+.nav-link-active {
+  border-color: var(--teal-dark);
+  color: var(--teal-dark);
+}
+
+.page-shell {
+  width: min(1120px, calc(100% - 2rem));
+  margin: 0 auto;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 16px 36px rgb(15 23 42 / 0.06);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  border-radius: 10px;
+  background: #00756e;
+  color: white;
+  font-weight: 800;
+  box-shadow: 0 8px 16px rgb(0 85 79 / 0.18);
+}
+
+.btn-blue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  border-radius: 10px;
+  background: #155bd4;
+  color: white;
+  font-weight: 800;
+  box-shadow: 0 8px 16px rgb(21 91 212 / 0.16);
+}
+
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 10px;
+  border: 2px solid #155bd4;
+  color: #0756d5;
+  font-weight: 800;
+}
+
+.field {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid #b9c8cb;
+  background: #f8fafc;
+  padding: 0.9rem 1rem;
+  outline: none;
+}
+
+.field:focus {
+  border-color: #007a73;
+  box-shadow: 0 0 0 3px rgb(0 122 115 / 0.16);
+}
+
+.choice {
+  border: 1px solid #b9c8cb;
+  border-radius: 8px;
+  background: white;
+  padding: 0.9rem 1rem;
+  text-align: center;
+  font-weight: 700;
+}
+
+.choice-active {
+  border-color: #007a73;
+  background: #dffafa;
+  color: #00615d;
+}
+
+.error-text {
+  margin-top: 0.35rem;
+  color: #c31515;
+  font-size: 0.875rem;
+}
