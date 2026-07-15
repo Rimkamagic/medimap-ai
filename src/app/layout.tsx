@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "메디맵 AI",
-  description: "증상 분석, 응급 위험 안내, 주변 병원과 약국 검색을 제공하는 반응형 의료 안내 웹 애플리케이션입니다."
+  description: "증상 분석, 응급 안내, 주변 병원과 약국 검색을 제공하는 반응형 의료 안내 웹 애플리케이션입니다."
 };
 
 export default function RootLayout({

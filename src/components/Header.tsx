@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
-import { CircleUserRound, LogOut, Menu } from "lucide-react";
+import { CircleUserRound, LogOut, MapPin, Menu } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 const navItems = [
@@ -77,6 +77,10 @@ export function Header() {
           {authReady && user ? (
             <div className="hidden items-center gap-3 md:flex">
               <span className="max-w-44 truncate text-sm font-bold text-slate-700">{user.email}</span>
+              <Link href="/profile/location" className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-700">
+                <MapPin className="size-4" aria-hidden="true" />
+                My Area
+              </Link>
               <button type="button" onClick={handleLogout} className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-5 py-2.5 text-sm font-bold text-slate-700">
                 <LogOut className="size-4" aria-hidden="true" />
                 Logout

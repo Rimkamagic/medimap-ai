@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Crosshair, Info, LocateFixed, MapPin, Navigation, Phone, Search } from "lucide-react";
 import { kmuCenter, medicalPlaces } from "@/data/places";
 import { calculateDistanceKm } from "@/lib/distance";
-import type { MedicalPlace } from "@/types/health";
+import { getProfileLocation } from "@/lib/profile";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import type { MedicalPlace, UserProfileLocation } from "@/types/health";
 
 type PlaceType = "all" | MedicalPlace["type"];
 
@@ -51,6 +53,8 @@ export function MapExperience({ initialType = "all" }: { initialType?: PlaceType
   const [selectedType, setSelectedType] = useState<PlaceType>(initialType);
   const [distance, setDistance] = useState(3);
   const [position, setPosition] = useState(kmuCenter);
+  const [positionSource, setPositionSource] = useState<"browser" | "profile" | "default">("default");
+  const [profileLocation, setProfileLocation] = useState<UserProfileLocation | null>(null);
   const [locationDenied, setLocationDenied] = useState(false);
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const [mapReady, setMapReady] = useState(false);
@@ -68,19 +72,73 @@ export function MapExperience({ initialType = "all" }: { initialType?: PlaceType
   }, [distance, position, selectedType]);
 
   useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    const client = supabase;
+    let mounted = true;
+
+    async function loadProfileLocation() {
+      const { data } = await client.auth.getUser();
+      if (!mounted || !data.user) return;
+
+      const profile = await getProfileLocation(client, data.user.id);
+      if (!mounted || !profile) return;
+
+      setProfileLocation(profile);
+      setPosition((current) => {
+        if (positionSource !== "default") {
+          return current;
+        }
+
+        return {
+          latitude: profile.preferredLatitude,
+          longitude: profile.preferredLongitude
+        };
+      });
+      setPositionSource((current) => (current === "default" ? "profile" : current));
+    }
+
+    void loadProfileLocation();
+
+    return () => {
+      mounted = false;
+    };
+  }, [positionSource]);
+
+  useEffect(() => {
+    const applyProfileFallback = () => {
+      setLocationDenied(true);
+      setPositionSource((current) => {
+        if (current === "browser") return current;
+
+        if (profileLocation) {
+          setPosition({
+            latitude: profileLocation.preferredLatitude,
+            longitude: profileLocation.preferredLongitude
+          });
+          return "profile";
+        }
+
+        setPosition(kmuCenter);
+        return "default";
+      });
+    };
+
     if (!navigator.geolocation) {
-      const id = window.setTimeout(() => setLocationDenied(true), 0);
+      const id = window.setTimeout(applyProfileFallback, 0);
       return () => window.clearTimeout(id);
     }
 
     navigator.geolocation.getCurrentPosition(
       (current) => {
         setPosition({ latitude: current.coords.latitude, longitude: current.coords.longitude });
+        setPositionSource("browser");
       },
-      () => setLocationDenied(true),
+      applyProfileFallback,
       { enableHighAccuracy: false, timeout: 5000 }
     );
-  }, []);
+  }, [profileLocation]);
 
   useEffect(() => {
     if (!clientId || !mapRef.current || mapUnavailable) return;
@@ -221,9 +279,13 @@ export function MapExperience({ initialType = "all" }: { initialType?: PlaceType
           </div>
           {locationDenied && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-slate-700" role="status">
-              위치 권한이 거절되어 계명대학교 주변 mock 위치를 기준으로 표시합니다. 정확한 위치는 저장하지 않습니다.
+              위치 권한이 거절되어 {positionSource === "profile" && profileLocation ? `${profileLocation.preferredPlaceName} 기준 지역` : "계명대학교 주변 기본 위치"}로 표시합니다. 정확한 현재 좌표는 저장하지 않습니다.
             </div>
           )}
+          <div className="rounded-lg border border-teal-100 bg-teal-50 p-4 text-sm text-slate-700">
+            <span className="font-extrabold text-teal-800">지도 기준:</span>{" "}
+            {positionSource === "browser" ? "현재 위치" : positionSource === "profile" && profileLocation ? `${profileLocation.preferredPlaceName} (${profileLocation.preferredRegion})` : "계명대학교 성서캠퍼스 기본 위치"}
+          </div>
           <p className="flex gap-2 text-sm text-slate-700">
             <Info className="mt-0.5 size-4 shrink-0 text-red-600" aria-hidden="true" />
             영업시간은 실제 정보와 다를 수 있으므로 방문 전 전화 확인이 필요합니다.

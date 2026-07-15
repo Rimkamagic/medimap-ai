@@ -70,6 +70,23 @@ export interface MedicalPlace {
   distance?: number;
 }
 
+export interface PreferredRegion {
+  id: string;
+  regionName: string;
+  placeName: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface UserProfileLocation {
+  userId: string;
+  displayName?: string | null;
+  preferredRegion: string;
+  preferredPlaceName: string;
+  preferredLatitude: number;
+  preferredLongitude: number;
+}
+
 export interface SearchHistoryItem {
   id: string;
   createdAt: string;
