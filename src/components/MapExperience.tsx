@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Crosshair, Info, LocateFixed, MapPin, Navigation, Phone, Search } from "lucide-react";
-import { medicalPlaces, kmuCenter } from "@/data/places";
+import { kmuCenter, medicalPlaces } from "@/data/places";
 import { calculateDistanceKm } from "@/lib/distance";
 import type { MedicalPlace } from "@/types/health";
 
@@ -34,42 +34,26 @@ interface NaverMapsApi {
 declare global {
   interface Window {
     naver?: NaverMapsApi;
+    __medimapNaverMapReady?: () => void;
   }
 }
 
+const NAVER_SCRIPT_ID = "naver-map-script";
+const NAVER_CALLBACK_NAME = "__medimapNaverMapReady";
+
 function isNaverMapsReady() {
-  return Boolean(window.naver?.maps?.Map && window.naver.maps.LatLng && window.naver.maps.Marker && window.naver.maps.InfoWindow && window.naver.maps.Event);
-}
-
-function waitForNaverMapsReady(timeoutMs = 5000) {
-  return new Promise<boolean>((resolve) => {
-    const startedAt = Date.now();
-
-    const check = () => {
-      if (isNaverMapsReady()) {
-        resolve(true);
-        return;
-      }
-
-      if (Date.now() - startedAt >= timeoutMs) {
-        resolve(false);
-        return;
-      }
-
-      window.setTimeout(check, 120);
-    };
-
-    check();
-  });
+  const maps = window.naver?.maps;
+  return Boolean(maps?.Map && maps.LatLng && maps.Marker && maps.InfoWindow && maps.Event);
 }
 
 export function MapExperience({ initialType = "all" }: { initialType?: PlaceType }) {
-  const clientId = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
+  const clientId = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID?.trim();
   const [selectedType, setSelectedType] = useState<PlaceType>(initialType);
   const [distance, setDistance] = useState(3);
   const [position, setPosition] = useState(kmuCenter);
   const [locationDenied, setLocationDenied] = useState(false);
   const [mapUnavailable, setMapUnavailable] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const [activePlace, setActivePlace] = useState<MedicalPlace | null>(null);
   const mapRef = useRef<HTMLDivElement | null>(null);
   const naverMap = useRef<NaverMapInstance | null>(null);
@@ -102,78 +86,104 @@ export function MapExperience({ initialType = "all" }: { initialType?: PlaceType
     if (!clientId || !mapRef.current || mapUnavailable) return;
 
     let cancelled = false;
-    const scriptId = "naver-map-script";
-    const initialize = async () => {
-      if (!mapRef.current || naverMap.current) return;
+    const initialize = () => {
+      if (cancelled || !mapRef.current || naverMap.current) return;
 
-      const ready = await waitForNaverMapsReady();
-      if (cancelled) return;
-
-      if (!ready) {
+      if (!isNaverMapsReady()) {
         setMapUnavailable(true);
         return;
       }
 
       const maps = window.naver!.maps!;
-      const center = new maps.LatLng!(position.latitude, position.longitude);
-      naverMap.current = new maps.Map!(mapRef.current, { center, zoom: 15 });
+      const LatLng = maps.LatLng!;
+      const Map = maps.Map!;
+      const center = new LatLng(position.latitude, position.longitude);
+      naverMap.current = new Map(mapRef.current, { center, zoom: 15 });
+      setMapReady(true);
+      setMapUnavailable(false);
     };
 
-    if (document.getElementById(scriptId)) {
-      void initialize();
+    window.__medimapNaverMapReady = initialize;
+
+    if (isNaverMapsReady()) {
+      initialize();
       return () => {
         cancelled = true;
       };
     }
 
-    const script = document.createElement("script");
-    script.id = scriptId;
-    script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${clientId}`;
-    script.async = true;
-    script.onload = () => void initialize();
-    script.onerror = () => setMapUnavailable(true);
-    document.head.appendChild(script);
+    const existingScript = document.getElementById(NAVER_SCRIPT_ID);
+    if (!existingScript) {
+      const script = document.createElement("script");
+      script.id = NAVER_SCRIPT_ID;
+      script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(clientId)}&callback=${NAVER_CALLBACK_NAME}`;
+      script.async = true;
+      script.defer = true;
+      script.onerror = () => {
+        if (!cancelled) setMapUnavailable(true);
+      };
+      document.head.appendChild(script);
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      if (!cancelled && !isNaverMapsReady()) {
+        setMapUnavailable(true);
+      }
+    }, 10000);
 
     return () => {
       cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
     };
   }, [clientId, mapUnavailable, position.latitude, position.longitude]);
 
   useEffect(() => {
-    if (!clientId || !naverMap.current || mapUnavailable) return;
-
-    if (!isNaverMapsReady()) {
-      const id = window.setTimeout(() => setMapUnavailable(true), 0);
-      return () => window.clearTimeout(id);
-    }
+    if (!mapReady || !naverMap.current || !isNaverMapsReady()) return;
 
     const maps = window.naver!.maps!;
+    const LatLng = maps.LatLng!;
+    const Marker = maps.Marker!;
+    const InfoWindow = maps.InfoWindow!;
+    const Event = maps.Event!;
+
     markers.current.forEach((marker) => marker.setMap(null));
-    markers.current = places.map((place) => {
-      const marker = new maps.Marker!({
-        position: new maps.LatLng!(place.latitude, place.longitude),
-        map: naverMap.current,
-        title: place.name
-      });
-      const info = new maps.InfoWindow!({
-        content: `<div style="padding:10px;font-weight:700">${place.name}</div>`
-      });
 
-      maps.Event!.addListener(marker, "click", () => {
-        setActivePlace(place);
-        info.open(naverMap.current!, marker);
-      });
+    try {
+      markers.current = places.map((place) => {
+        const marker = new Marker({
+          position: new LatLng(place.latitude, place.longitude),
+          map: naverMap.current,
+          title: place.name
+        });
+        const info = new InfoWindow({
+          content: `<div style="padding:10px;font-weight:700">${place.name}</div>`
+        });
 
-      return marker;
-    });
-  }, [clientId, mapUnavailable, places]);
+        Event.addListener(marker, "click", () => {
+          setActivePlace(place);
+          info.open(naverMap.current!, marker);
+        });
+
+        return marker;
+      });
+    } catch {
+      window.setTimeout(() => setMapUnavailable(true), 0);
+    }
+  }, [mapReady, places]);
+
+  useEffect(() => {
+    if (!mapReady || !naverMap.current || !isNaverMapsReady()) return;
+
+    const LatLng = window.naver!.maps!.LatLng!;
+    naverMap.current.setCenter(new LatLng(position.latitude, position.longitude));
+  }, [mapReady, position.latitude, position.longitude]);
 
   function focusPlace(place: MedicalPlace) {
     setActivePlace(place);
 
     if (isNaverMapsReady() && naverMap.current) {
-      const maps = window.naver!.maps!;
-      naverMap.current.setCenter(new maps.LatLng!(place.latitude, place.longitude));
+      const LatLng = window.naver!.maps!.LatLng!;
+      naverMap.current.setCenter(new LatLng(place.latitude, place.longitude));
       naverMap.current.setZoom(16);
     }
   }
@@ -211,7 +221,7 @@ export function MapExperience({ initialType = "all" }: { initialType?: PlaceType
           </div>
           {locationDenied && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-slate-700" role="status">
-              위치 권한이 거절되었습니다. 대구 계명대학교 주변 mock 위치로 표시 중이며, 지역명 검색은 추후 주소 API와 연결할 수 있습니다.
+              위치 권한이 거절되어 계명대학교 주변 mock 위치를 기준으로 표시합니다. 정확한 위치는 저장하지 않습니다.
             </div>
           )}
           <p className="flex gap-2 text-sm text-slate-700">
@@ -229,7 +239,14 @@ export function MapExperience({ initialType = "all" }: { initialType?: PlaceType
       </aside>
 
       <section className="relative min-h-[680px] overflow-hidden bg-slate-200">
-        {showNaverMap ? <div ref={mapRef} className="absolute inset-0" aria-label="네이버 지도" /> : <MockMap places={places} activePlace={activePlace} onFocus={focusPlace} hasClientId={Boolean(clientId)} />}
+        {showNaverMap ? (
+          <>
+            <div ref={mapRef} className="absolute inset-0" aria-label="네이버 지도" />
+            {!mapReady && <div className="absolute left-6 top-6 z-10 rounded-lg bg-white/90 p-3 text-sm font-semibold text-slate-700 shadow">네이버 지도를 불러오는 중입니다.</div>}
+          </>
+        ) : (
+          <MockMap places={places} activePlace={activePlace} onFocus={focusPlace} hasClientId={Boolean(clientId)} />
+        )}
         <div className="absolute left-1/2 top-8 z-10 flex w-[min(560px,calc(100%-2rem))] -translate-x-1/2 items-center gap-4 rounded-full border border-slate-300 bg-white px-8 py-5 shadow-2xl">
           <Search className="size-6 text-teal-800" aria-hidden="true" />
           <input className="w-full outline-none" placeholder="병원 또는 약국 검색" aria-label="병원 또는 약국 검색" />
@@ -245,6 +262,7 @@ export function MapExperience({ initialType = "all" }: { initialType?: PlaceType
 
 function PlaceCard({ place, active, onFocus }: { place: MedicalPlace; active: boolean; onFocus: () => void }) {
   const typeLabel = place.type === "emergency" ? "ER" : place.type === "pharmacy" ? "약국" : "병원";
+
   return (
     <article className={`rounded-xl border p-5 shadow-sm ${active ? "border-teal-700 bg-teal-50" : "border-slate-300 bg-white"}`}>
       <div className="flex items-start justify-between gap-4">
@@ -276,7 +294,9 @@ function MockMap({ places, activePlace, onFocus, hasClientId }: { places: Medica
   return (
     <div className="absolute inset-0 bg-[linear-gradient(35deg,transparent_48%,#b8d5d2_49%,#b8d5d2_51%,transparent_52%),linear-gradient(120deg,transparent_46%,#d0dddd_47%,#d0dddd_51%,transparent_52%),linear-gradient(#e8eef0_1px,transparent_1px),linear-gradient(90deg,#e8eef0_1px,transparent_1px)] bg-[length:260px_260px,320px_320px,80px_80px,80px_80px]">
       <div className="absolute left-6 top-6 max-w-md rounded-lg bg-white/90 p-3 text-sm font-semibold text-slate-700 shadow">
-        {hasClientId ? "네이버 지도 SDK가 완전히 준비되지 않아 mock 지도를 표시합니다. 네이버 콘솔의 Web 서비스 URL에 http://localhost:3000이 등록되어 있는지 확인해 주세요." : "API 키가 없어서 mock 지도 영역을 표시합니다. .env.local에 NEXT_PUBLIC_NAVER_MAP_CLIENT_ID를 설정하면 네이버 지도가 연결됩니다."}
+        {hasClientId
+          ? "네이버 지도 SDK가 준비되지 않아 mock 지도를 표시합니다. 네이버 콘솔에서 Web 서비스 URL, Web Dynamic Map 사용 여부, Client ID 값을 확인해 주세요."
+          : "API 키가 없어서 mock 지도 영역을 표시합니다. .env.local 또는 배포 환경변수에 NEXT_PUBLIC_NAVER_MAP_CLIENT_ID를 설정하면 네이버 지도가 연결됩니다."}
       </div>
       <div className="absolute left-[45%] top-[48%] flex items-center gap-2 rounded-full bg-blue-700 px-4 py-2 font-bold text-white shadow">
         <LocateFixed className="size-4" aria-hidden="true" /> 현재 위치
